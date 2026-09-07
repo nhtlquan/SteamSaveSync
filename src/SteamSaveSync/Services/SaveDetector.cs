@@ -12,32 +12,34 @@ public sealed class SaveDetector
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.DoNotVerify),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
         };
 
         var tokens = BuildTokens(game.Name, game.AppId);
         var matches = new List<string>();
-
         foreach (var root in roots.Where(Directory.Exists))
         {
             try
             {
                 foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.TopDirectoryOnly))
-                {
-                    var leaf = Path.GetFileName(directory);
-                    if (tokens.Any(t => leaf.Contains(t, StringComparison.OrdinalIgnoreCase)))
-                        matches.Add(directory);
-                }
+                    if (tokens.Any(t => Path.GetFileName(directory).Contains(t, StringComparison.OrdinalIgnoreCase))) matches.Add(directory);
             }
             catch { }
         }
 
-        var status = matches.Count switch
+        DateTime? lastSave = null;
+        foreach (var path in matches)
         {
-            0 => "Unknown",
-            1 => "Candidate found",
-            _ => $"{matches.Count} candidates"
-        };
+            try
+            {
+                var latest = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
+                    .Select(File.GetLastWriteTime)
+                    .DefaultIfEmpty()
+                    .Max();
+                if (latest != default && (!lastSave.HasValue || latest > lastSave.Value)) lastSave = latest;
+            }
+            catch { }
+        }
 
         return new SteamGame
         {
@@ -45,8 +47,10 @@ public sealed class SaveDetector
             AppId = game.AppId,
             InstallDirectory = game.InstallDirectory,
             LibraryPath = game.LibraryPath,
-            SaveStatus = status,
-            SavePaths = matches
+            SaveStatus = matches.Count == 0 ? "Save not found" : matches.Count == 1 ? "Save found" : $"{matches.Count} save folders",
+            SavePaths = matches,
+            LastSaveTime = lastSave,
+            SyncEnabled = matches.Count > 0
         };
     }
 
