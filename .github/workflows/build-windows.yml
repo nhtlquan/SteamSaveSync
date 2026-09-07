@@ -18,11 +18,11 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore
-        run: dotnet restore src/SteamSaveSync/SteamSaveSync.csproj
+      - name: Restore for Windows x64
+        run: dotnet restore src/SteamSaveSync/SteamSaveSync.csproj -r win-x64
 
       - name: Build
-        run: dotnet build src/SteamSaveSync/SteamSaveSync.csproj -c Release --no-restore
+        run: dotnet build src/SteamSaveSync/SteamSaveSync.csproj -c Release -r win-x64 --no-restore
 
       - name: Publish Windows x64 EXE
         run: dotnet publish src/SteamSaveSync/SteamSaveSync.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
