@@ -1,0 +1,10 @@
+namespace SteamSaveSync.Models;
+
+public sealed class SteamGame
+{
+    public string Name { get; init; } = string.Empty;
+    public string AppId { get; init; } = string.Empty;
+    public string InstallDirectory { get; init; } = string.Empty;
+    public string LibraryPath { get; init; } = string.Empty;
+    public string SaveStatus { get; init; } = "Not scanned";
+}
