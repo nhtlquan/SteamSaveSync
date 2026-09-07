@@ -8,6 +8,9 @@ public sealed class SteamGame
     public string LibraryPath { get; init; } = string.Empty;
     public string SaveStatus { get; set; } = "Not scanned";
     public IReadOnlyList<string> SavePaths { get; init; } = Array.Empty<string>();
-    public bool SyncEnabled { get; set; }
-    public string SyncStatus { get; set; } = "Disabled";
+    public bool SyncEnabled { get; set; } = true;
+    public string SyncStatus { get; set; } = "Ready";
+    public DateTime? LastSaveTime { get; set; }
+    public string LastSaveDisplay => LastSaveTime?.ToString("dd/MM/yyyy HH:mm") ?? "No save found";
+    public string LogoUrl => string.IsNullOrWhiteSpace(AppId) ? string.Empty : $"https://cdn.cloudflare.steamstatic.com/steam/apps/{AppId}/header.jpg";
 }
