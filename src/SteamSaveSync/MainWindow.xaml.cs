@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using Microsoft.Win32;
 using SteamSaveSync.Models;
 using SteamSaveSync.Services;
 
@@ -9,15 +10,14 @@ public partial class MainWindow : Window
 {
     private readonly SteamScanner _scanner = new();
     private readonly SaveDetector _detector = new();
-    private readonly SaveSyncService _sync = new();
+    private readonly ManualSharedSyncService _manual = new();
     private readonly ObservableCollection<SteamGame> _games = new();
-    private readonly SyncthingService _syncthing = new();
-    private SaveWatchService? _watcher;
 
     public MainWindow()
     {
         InitializeComponent();
         GamesGrid.ItemsSource = _games;
+        SharedPathBox.Text = _manual.DefaultSharedPath;
     }
 
     private async void ScanSteam_Click(object sender, RoutedEventArgs e)
@@ -28,9 +28,8 @@ public partial class MainWindow : Window
             var games = await Task.Run(() => _scanner.ScanInstalledGames().Select(_detector.Detect).OrderBy(g => g.Name).ToList());
             _games.Clear();
             foreach (var game in games) _games.Add(game);
-            var found = _games.Count(g => g.SavePaths.Count > 0);
             StatusText.Text = "Scan complete";
-            SummaryText.Text = $"Found {_games.Count} games; {found} have save candidates.";
+            SummaryText.Text = $"Found {_games.Count} game(s). Select the games to include.";
         }
         catch (Exception ex) { StatusText.Text = "Scan failed"; SummaryText.Text = ex.Message; }
     }
@@ -38,45 +37,39 @@ public partial class MainWindow : Window
     private void EnableSelected_Click(object sender, RoutedEventArgs e)
     {
         foreach (SteamGame game in GamesGrid.SelectedItems)
-            if (game.SavePaths.Count > 0) { game.SyncEnabled = true; game.SyncStatus = "Enabled"; }
+            if (game.SavePaths.Count > 0) { game.SyncEnabled = true; game.SyncStatus = "Included"; }
         GamesGrid.Items.Refresh();
     }
 
-    private void StartAutoSync_Click(object sender, RoutedEventArgs e)
+    private async void Export_Click(object sender, RoutedEventArgs e)
     {
-        _watcher?.Dispose();
-        _watcher = new SaveWatchService(_sync);
-        _watcher.SyncCompleted += (game, message) => Dispatcher.Invoke(() =>
-        {
-            game.SyncStatus = message;
-            GamesGrid.Items.Refresh();
-            StatusText.Text = "Auto sync active";
-        });
-        _watcher.Start(_games);
-        var syncthing = _syncthing.IsAvailable ? (_syncthing.Start() ? " Syncthing started." : " Syncthing launch failed.") : " Syncthing not found.";
-        StatusText.Text = "Auto sync started." + syncthing;
+        var games = _games.Where(g => g.SyncEnabled).ToList();
+        StatusText.Text = "Copying saves to shared folder...";
+        var result = await Task.Run(() => _manual.ExportToShared(games, SharedPathBox.Text));
+        foreach (var game in games) game.SyncStatus = result.Success ? "Exported to shared" : result.Message;
+        GamesGrid.Items.Refresh(); StatusText.Text = result.Message;
     }
 
-    private void StopAutoSync_Click(object sender, RoutedEventArgs e)
+    private async void RefreshShared_Click(object sender, RoutedEventArgs e)
     {
-        _watcher?.Stop();
-        StatusText.Text = "Auto sync stopped";
+        StatusText.Text = "Checking shared folder...";
+        var result = await Task.Run(() => _manual.RefreshSharedFolder(SharedPathBox.Text));
+        StatusText.Text = result.Message;
+        SummaryText.Text = "Data is available locally after Syncthing finishes updating the shared folder.";
     }
 
-    private async void SyncNow_Click(object sender, RoutedEventArgs e)
+    private async void Restore_Click(object sender, RoutedEventArgs e)
     {
-        var enabled = _games.Where(g => g.SyncEnabled).ToList();
-        StatusText.Text = $"Syncing {enabled.Count} game(s)...";
-        var results = await Task.Run(() => enabled.Select(g => (Game:g, Result:_sync.Sync(g))).ToList());
-        foreach (var item in results) item.Game.SyncStatus = item.Result.Message;
-        GamesGrid.Items.Refresh();
-        StatusText.Text = "Sync complete";
-        SummaryText.Text = $"Sync staging folder: {_sync.Root}";
+        var games = _games.Where(g => g.SyncEnabled).ToList();
+        StatusText.Text = "Copying shared data to game saves...";
+        var result = await Task.Run(() => _manual.RestoreFromShared(games, SharedPathBox.Text));
+        foreach (var game in games) game.SyncStatus = result.Success ? "Restored from shared" : result.Message;
+        GamesGrid.Items.Refresh(); StatusText.Text = result.Message;
     }
 
-    protected override void OnClosed(EventArgs e)
+    private void BrowseShared_Click(object sender, RoutedEventArgs e)
     {
-        _watcher?.Dispose();
-        base.OnClosed(e);
+        var dialog = new OpenFolderDialog { InitialDirectory = Directory.Exists(SharedPathBox.Text) ? SharedPathBox.Text : null };
+        if (dialog.ShowDialog() == true) SharedPathBox.Text = dialog.FolderName;
     }
 }
