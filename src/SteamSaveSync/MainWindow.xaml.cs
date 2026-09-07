@@ -11,6 +11,8 @@ public partial class MainWindow : Window
     private readonly SaveDetector _detector = new();
     private readonly SaveSyncService _sync = new();
     private readonly ObservableCollection<SteamGame> _games = new();
+    private readonly SyncthingService _syncthing = new();
+    private SaveWatchService? _watcher;
 
     public MainWindow()
     {
@@ -35,8 +37,30 @@ public partial class MainWindow : Window
 
     private void EnableSelected_Click(object sender, RoutedEventArgs e)
     {
-        foreach (SteamGame game in GamesGrid.SelectedItems) if (game.SavePaths.Count > 0) { game.SyncEnabled = true; game.SyncStatus = "Enabled"; }
+        foreach (SteamGame game in GamesGrid.SelectedItems)
+            if (game.SavePaths.Count > 0) { game.SyncEnabled = true; game.SyncStatus = "Enabled"; }
         GamesGrid.Items.Refresh();
+    }
+
+    private void StartAutoSync_Click(object sender, RoutedEventArgs e)
+    {
+        _watcher?.Dispose();
+        _watcher = new SaveWatchService(_sync);
+        _watcher.SyncCompleted += (game, message) => Dispatcher.Invoke(() =>
+        {
+            game.SyncStatus = message;
+            GamesGrid.Items.Refresh();
+            StatusText.Text = "Auto sync active";
+        });
+        _watcher.Start(_games);
+        var syncthing = _syncthing.IsAvailable ? (_syncthing.Start() ? " Syncthing started." : " Syncthing launch failed.") : " Syncthing not found.";
+        StatusText.Text = "Auto sync started." + syncthing;
+    }
+
+    private void StopAutoSync_Click(object sender, RoutedEventArgs e)
+    {
+        _watcher?.Stop();
+        StatusText.Text = "Auto sync stopped";
     }
 
     private async void SyncNow_Click(object sender, RoutedEventArgs e)
@@ -48,5 +72,11 @@ public partial class MainWindow : Window
         GamesGrid.Items.Refresh();
         StatusText.Text = "Sync complete";
         SummaryText.Text = $"Sync staging folder: {_sync.Root}";
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _watcher?.Dispose();
+        base.OnClosed(e);
     }
 }
