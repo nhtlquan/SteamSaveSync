@@ -6,9 +6,7 @@ public sealed record ManualSyncResult(bool Success, string Message, int Files);
 
 public sealed class ManualSharedSyncService
 {
-    public string DefaultSharedPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "SteamSaveSync", "Shared");
+    public string DefaultSharedPath => @"C:\SteamSaveSync";
 
     public ManualSyncResult ExportToShared(IEnumerable<SteamGame> games, string sharedRoot)
     {
@@ -16,30 +14,28 @@ public sealed class ManualSharedSyncService
         var count = 0;
         foreach (var game in games.Where(g => g.SavePaths.Count > 0))
         {
-            var gameRoot = Path.Combine(sharedRoot, game.AppId);
+            var gameRoot = Path.Combine(sharedRoot, game.AppId, "data");
+            if (Directory.Exists(gameRoot)) Directory.Delete(gameRoot, true);
             Directory.CreateDirectory(gameRoot);
-            File.WriteAllText(Path.Combine(gameRoot, "game.json"), System.Text.Json.JsonSerializer.Serialize(new { game.AppId, game.Name, ExportedAt = DateTimeOffset.UtcNow }));
+            File.WriteAllText(Path.Combine(sharedRoot, game.AppId, "game.json"), System.Text.Json.JsonSerializer.Serialize(new { game.AppId, game.Name, game.LastSaveTime, ExportedAt = DateTimeOffset.Now }));
             foreach (var source in game.SavePaths.Where(Directory.Exists))
-            {
-                var destination = Path.Combine(gameRoot, "data", Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
-                if (Directory.Exists(destination)) Directory.Delete(destination, true);
-                count += CopyDirectory(source, destination);
-            }
+                count += CopyDirectory(source, Path.Combine(gameRoot, Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))));
         }
-        return new(true, $"Exported {count} file(s) to shared folder.", count);
+        return new(true, $"Saved {count} file(s) to C:\\SteamSaveSync.", count);
     }
 
-    public ManualSyncResult RefreshSharedFolder(string sharedRoot)
+    public ManualSyncResult PullFromDevice(string remoteRoot, string localRoot)
     {
-        if (!Directory.Exists(sharedRoot)) return new(false, "Shared folder does not exist.", 0);
-        var files = Directory.EnumerateFiles(sharedRoot, "*", SearchOption.AllDirectories).Count();
-        return new(true, $"Shared folder is ready. {files} file(s) available.", files);
+        if (!Directory.Exists(remoteRoot)) return new(false, $"Cannot access {remoteRoot}", 0);
+        if (Directory.Exists(localRoot)) Directory.Delete(localRoot, true);
+        var files = CopyDirectory(remoteRoot, localRoot);
+        return new(true, $"Downloaded {files} file(s) from device.", files);
     }
 
     public ManualSyncResult RestoreFromShared(IEnumerable<SteamGame> games, string sharedRoot)
     {
         var count = 0;
-        foreach (var game in games.Where(g => g.SavePaths.Count > 0))
+        foreach (var game in games.Where(g => g.SyncEnabled && g.SavePaths.Count > 0))
         {
             var sourceRoot = Path.Combine(sharedRoot, game.AppId, "data");
             if (!Directory.Exists(sourceRoot)) continue;
@@ -47,12 +43,12 @@ public sealed class ManualSharedSyncService
             {
                 var source = Path.Combine(sourceRoot, Path.GetFileName(destination.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
                 if (!Directory.Exists(source)) continue;
-                var backupRoot = Path.Combine(sharedRoot, "Backups", Environment.MachineName, game.AppId, DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+                var backupRoot = Path.Combine(sharedRoot, "Backups", game.AppId, DateTime.Now.ToString("yyyyMMdd-HHmmss"));
                 CopyDirectory(destination, backupRoot);
                 count += CopyDirectory(source, destination);
             }
         }
-        return new(true, $"Restored {count} file(s) from shared folder.", count);
+        return new(true, $"Synchronized {count} file(s) to game save folders.", count);
     }
 
     private static int CopyDirectory(string source, string destination)
@@ -61,8 +57,7 @@ public sealed class ManualSharedSyncService
         var count = 0;
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
-            var relative = Path.GetRelativePath(source, file);
-            var target = Path.Combine(destination, relative);
+            var target = Path.Combine(destination, Path.GetRelativePath(source, file));
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, true);
             count++;
