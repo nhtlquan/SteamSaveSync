@@ -5,17 +5,31 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Publish
-        run: dotnet publish src/SteamSaveSync/SteamSaveSync.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
-      - uses: actions/upload-artifact@v4
+
+      - name: Restore
+        run: dotnet restore src/SteamSaveSync/SteamSaveSync.csproj
+
+      - name: Build
+        run: dotnet build src/SteamSaveSync/SteamSaveSync.csproj -c Release --no-restore
+
+      - name: Publish Windows x64 EXE
+        run: dotnet publish src/SteamSaveSync/SteamSaveSync.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+
+      - name: Upload SteamSaveSync EXE
+        uses: actions/upload-artifact@v4
         with:
           name: SteamSaveSync-win-x64
           path: publish/
+          if-no-files-found: error
